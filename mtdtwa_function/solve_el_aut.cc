@@ -121,6 +121,9 @@ static const std::vector<std::string>* global_controllable_var_names = nullptr;
 static const std::vector<std::string>* global_inverted_controllable_var_names = nullptr;
 static const spot::twa_graph_ptr* global_aut = nullptr;
 static int global_current_player = 0;
+static unsigned global_accepting_sink_terminal = -1U; // terminal index of the accepting sink
+static unsigned global_rejecting_sink_terminal = -1U; // terminal index of the rejecting sink
+static int global_accepting_player = 0; // player who wins from accepting plays
 
 
 // alias for readability: map from mark/state → **set** of ints
@@ -128,7 +131,16 @@ using SetMap = std::unordered_map<int, std::unordered_set<int>>;
 
 // Function to check if a terminal is winning
 static int is_winning_terminal_with_acc(int v) {
-    int dst = v;
+    unsigned dst = v;
+
+    // Accepting sink: always winning for the accepting player.
+    if (dst == global_accepting_sink_terminal)
+        return global_current_player == global_accepting_player;
+
+    // Rejecting sink: always winning for the non-accepting player.
+    if (dst == global_rejecting_sink_terminal)
+        return global_current_player != global_accepting_player;
+
     const auto& d = (*global_mtdta)->terminal_data_map[dst];
     bool acc_win = global_hierarchical_checker->check(d.first, global_current_player);
     if (acc_win)
@@ -284,7 +296,7 @@ SolveAutEL_t(
 
     ZlNodePtr zl_node_parent = &zl_tree->nodes_[zl_node_idx]; // t_0
 
-    unsigned int w_player = is_even ? 0 : 1;
+    unsigned int w_player = is_even ? 0 : 1; 
     unsigned int l_player = is_even ? 1 : 0;
 
     TRACE(CLR_BOLD CLR_CYAN "\u250c\u2500 SolveAutEL_t" CLR_RESET
@@ -505,6 +517,36 @@ SolveAutEL(
     global_inverted_controllable_var_names = &inverted_controllable_var_names;
 
     auto mtdta = spot::dtwa_to_mtdtwa(aut);
+
+    // Fix: dtwa_to_mtdtwa collapses accepting sinks into bddtrue and
+    // bddfalse leaves, which bypass the terminal callback.
+    // bdd_const_to_terminal expects terminal BDDs for both replacements,
+    // so we create two sink states: one accepting, one rejecting.
+    {
+        // Accepting sink (replaces bddtrue)
+        unsigned acc_sink_state = mtdta->states.size();
+        unsigned acc_term_idx = mtdta->terminal_data_map.size();
+        mtdta->terminal_data_map.push_back({{}, acc_sink_state});
+        bdd acc_sink_term = bdd_terminal(acc_term_idx);
+        mtdta->states.push_back(acc_sink_term); // self-loop
+        global_accepting_sink_terminal = acc_term_idx;
+
+        // Rejecting sink (replaces bddfalse)
+        unsigned rej_sink_state = mtdta->states.size();
+        unsigned rej_term_idx = mtdta->terminal_data_map.size();
+        mtdta->terminal_data_map.push_back({{}, rej_sink_state});
+        bdd rej_sink_term = bdd_terminal(rej_term_idx);
+        mtdta->states.push_back(rej_sink_term); // self-loop
+        global_rejecting_sink_terminal = rej_term_idx;
+
+        // Replace bddfalse → rej_sink_term, bddtrue → acc_sink_term
+        bddExtCache cache;
+        bdd_extcache_init(&cache, mtdta->num_roots() * 2, false);
+        for (auto& s : mtdta->states)
+            s = bdd_const_to_terminal(s, rej_sink_term, acc_sink_term, &cache, 0);
+        bdd_extcache_done(&cache);
+    }
+
     global_mtdta = &mtdta;
 
     // Use the MTDTWA root count, not aut->num_states(), because
@@ -519,6 +561,7 @@ SolveAutEL(
     }
     global_states = &aut_states;
     ZlPtr zl_tree = new spot::zielonka_tree(aut->acc());
+    global_accepting_player = zl_tree->is_even() ? 0 : 1;
     HierachicalChecker* hc = new HierachicalChecker();
     StateSet w_partition = {};
     StateSet l_partition = {};
@@ -553,6 +596,7 @@ SolveAutEL(
         hc,
         zl_tree->is_even()
     );
+
 
     delete hc;
     delete zl_tree;

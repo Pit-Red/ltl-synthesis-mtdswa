@@ -18,7 +18,7 @@ BIN_TLSF_BATCH  := tlsf_batch    # test_tlsf_batch  – solve a folder of TLSF b
 # =============================================================================
 # Sources
 # =============================================================================
-CORE_SRCS := solve_el_aut.cc HierachicalChecker.cc
+CORE_SRCS := solve_el_aut.cc solve_el_aut_swa.cc HierachicalChecker.cc
 
 SRCS_MAIN       := test.cc                              $(CORE_SRCS)
 SRCS_SYNTH      := tests-randltl/test_synth.cc          \
@@ -82,13 +82,25 @@ $(BUILD_DIR)/%.o: %.cc
 #   make tlsf        ARGS="tests-tlsf/testing_data/selection-ltl-2025/arbiter_2.tlsf"
 #   make tlsf-batch  ARGS="tests-tlsf/testing_data/selection-ltl-2025/"
 # =============================================================================
-.PHONY: run synth tlsf tlsf-batch
+.PHONY: run run-twa run-swa synth synth-twa synth-swa tlsf tlsf-batch
 
 run: $(BIN_MAIN)
 	./$(BIN_MAIN) "$(FORMULA)" "$(CONTR_VRB)"
 
+run-twa: $(BIN_MAIN)
+	EL_SOLVER=twa ./$(BIN_MAIN) "$(FORMULA)" "$(CONTR_VRB)"
+
+run-swa: $(BIN_MAIN)
+	EL_SOLVER=swa ./$(BIN_MAIN) "$(FORMULA)" "$(CONTR_VRB)"
+
 synth: $(BIN_SYNTH)
 	./$(BIN_SYNTH) $(ARGS)
+
+synth-twa: $(BIN_SYNTH)
+	EL_SOLVER=twa ./$(BIN_SYNTH) $(ARGS)
+
+synth-swa: $(BIN_SYNTH)
+	EL_SOLVER=swa ./$(BIN_SYNTH) $(ARGS)
 
 tlsf: $(BIN_TLSF)
 	./$(BIN_TLSF) $(ARGS)

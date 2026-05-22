@@ -1,8 +1,11 @@
 #include <spot/tl/parse.hh>
 #include "solve_el_aut.hh"
+#include "solve_el_aut_swa.hh"
 #include <spot/twaalgos/translate.hh>
 #include <spot/twaalgos/zlktree.hh>
 #include <spot/twaalgos/mtdtwa.hh>
+#include <spot/twaalgos/mtdswa.hh>
+#include <spot/twaalgos/sbacc.hh>
 #include <spot/twaalgos/dot.hh>
 #include <spot/twaalgos/game.hh>
 #include <iostream>
@@ -16,11 +19,14 @@
 void save_datastructures(spot::twa_graph_ptr aut) {
 
     spot::mtdtwa_ptr mtdta = spot::dtwa_to_mtdtwa(aut);
+    auto aut_sba = spot::sbacc(aut);
+    spot::mtdswa_ptr mtdswa = spot::dtwa_to_mtdswa(aut_sba);
+    mtdswa->sinks_as_states();
     spot::zielonka_tree zl_tree = spot::zielonka_tree(aut->acc());
 
     std::string dot_folder = "img/";
 
-    std::vector<std::string> names_datastructures = {"aut", "mtdta", "zl_tree"};
+    std::vector<std::string> names_datastructures = {"aut", "mtdta", "mtdswa", "zl_tree"};
 
     for (const auto& name : names_datastructures) {
         std::string dot_path = dot_folder + name + ".dot";
@@ -34,11 +40,13 @@ void save_datastructures(spot::twa_graph_ptr aut) {
             spot::print_dot(dot_out, aut);
         else if (name == "mtdta")
             mtdta->print_dot(dot_out);
+        else if (name == "mtdswa")
+            mtdswa->print_dot(dot_out);
         else if (name == "zl_tree")
             zl_tree.dot(dot_out);
 
         dot_out.close();
-         
+
         // printing the PNG
         std::string png_path = dot_folder + name + ".png";
         std::string cmd = "dot -Tpng " + dot_path + " -o " + png_path;
@@ -164,16 +172,41 @@ int main(int argc, char** argv) {
 
     save_datastructures(aut);
 
-    // EL solver
-    StateSet win_el = SolveAutEL(aut, controllable);
+    // EL_SOLVER env: "twa" = mtdtwa only, "swa" = mtdswa only, "both" or unset = compare
+    const char* solver_env = std::getenv("EL_SOLVER");
+    std::string solver_mode = solver_env ? solver_env : "both";
 
-    std::cout << "EL winning states: ";
-    for (auto s : win_el)
-        std::cout << s << " ";
-    std::cout << "\n";
+    bool run_twa = (solver_mode == "twa" || solver_mode == "both");
+    bool run_swa = (solver_mode == "swa" || solver_mode == "both");
 
-    bool realizable = win_el.count(aut->get_init_state_number()) > 0;
-    std::cout << "Realizable: " << (realizable ? "Yes" : "No") << "\n";
+    bool realizable = false;
+    bool realizable_swa = false;
+
+    if (run_twa) {
+        StateSet win_el = SolveAutEL(aut, controllable);
+        std::cout << "EL winning states (mtdtwa): ";
+        for (auto s : win_el) std::cout << s << " ";
+        std::cout << "\n";
+        realizable = win_el.count(aut->get_init_state_number()) > 0;
+        std::cout << "Realizable (mtdtwa): " << (realizable ? "Yes" : "No") << "\n";
+    }
+
+    if (run_swa) {
+        StateSet win_swa = SolveAutEL_swa(aut, controllable);
+        std::cout << "EL winning states (mtdswa): ";
+        for (auto s : win_swa) std::cout << s << " ";
+        std::cout << "\n";
+        realizable_swa = win_swa.count(aut->get_init_state_number()) > 0;
+        std::cout << "Realizable (mtdswa): " << (realizable_swa ? "Yes" : "No") << "\n";
+    }
+
+    if (run_twa && run_swa) {
+        if (realizable != realizable_swa)
+            std::cout << "\n*** MISMATCH: mtdtwa=" << (realizable ? "Yes" : "No")
+                      << " mtdswa=" << (realizable_swa ? "Yes" : "No") << " ***\n";
+        else
+            std::cout << "\nBoth solvers agree: " << (realizable ? "Realizable" : "Unrealizable") << "\n";
+    }
 
     return 0;
 }

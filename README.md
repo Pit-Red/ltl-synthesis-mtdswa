@@ -1,8 +1,13 @@
 # ltl-synthesis-mtdtwa
 
-Game-theoretic LTL synthesis using multi-tape deterministic temporal word automata (MTDTWA), built on top of the [Spot](https://spot.lrde.epita.fr/) formal verification library.
+Game-theoretic LTL synthesis using multi-tape deterministic automata, built on top of the [Spot](https://spot.lrde.epita.fr/) formal verification library.
 
 Given an LTL specification and a partition of atomic propositions into controllable (system) and uncontrollable (environment), the solver determines whether the specification is realizable and computes the set of winning states.
+
+Two solver backends are available:
+
+- **MTDTWA** (`SolveAutEL`) — uses transition-based acceptance via `spot::dtwa_to_mtdtwa`
+- **MTDSWA** (`SolveAutEL_swa`) — uses state-based acceptance via `spot::dtwa_to_mtdswa`. This variant avoids a bug where `dtwa_to_mtdtwa` collapses accepting sink states into `bddtrue`, bypassing the terminal callback. With `mtdswa` + `sinks_as_states()`, sinks become proper states with acceptance colors that the `HierachicalChecker` can evaluate.
 
 ## Prerequisites
 
@@ -73,19 +78,27 @@ This produces four binaries:
 ## Usage
 
 ```bash
-# Solve an LTL formula (controllable AP defaults to all)
+# Solve an LTL formula (runs both backends and compares results by default)
 make run FORMULA="GF a"
 
 # Specify controllable variables
 make run FORMULA="GF a & GF b" CONTR_VRB="a"
 
+# Run a specific backend only
+make run-twa FORMULA="GF a"    # MTDTWA backend only
+make run-swa FORMULA="GF a"    # MTDSWA backend only
+
 # Random LTL synthesis comparison: <inputs> <outputs> <seed> <n_samples>
-make synth ARGS="r1,r2 g1,g2 42 20"
+make synth ARGS="r1,r2 g1,g2 42 20"        # both backends
+make synth-twa ARGS="r1,r2 g1,g2 42 20"    # MTDTWA only
+make synth-swa ARGS="r1,r2 g1,g2 42 20"    # MTDSWA only
 
 # TLSF benchmarks (requires syfco on PATH)
 make tlsf ARGS="path/to/spec.tlsf"
 make tlsf-batch ARGS="path/to/benchmark/folder/"
 ```
+
+The solver backend can also be controlled via the `EL_SOLVER` environment variable: `twa`, `swa`, or `both` (default).
 
 ### Debug tracing
 
@@ -99,7 +112,8 @@ EL_TRACE=1 ./el_solver "GF a & GF b" "a"
 
 ```
 mtdtwa_function/
-├── solve_el_aut.cc/hh          Core EL game solver (SolveAutEL)
+├── solve_el_aut.cc/hh          Core EL game solver — MTDTWA backend (SolveAutEL)
+├── solve_el_aut_swa.cc/hh      Core EL game solver — MTDSWA backend (SolveAutEL_swa)
 ├── HierachicalChecker.cc/hh    Acceptance condition checker
 ├── test.cc                     el_solver entry point
 ├── mtdtwa_attractor.cc         Attractor computation binary
@@ -119,8 +133,14 @@ mtdtwa_function/
 ## Algorithm overview
 
 1. Parse the LTL formula and build a deterministic complete TWA using Spot
-2. Convert the TWA to an MTDTWA via `spot::dtwa_to_mtdtwa`
+2. Convert the TWA to a multi-tape deterministic automaton:
+   - **MTDTWA path**: `spot::dtwa_to_mtdtwa` (transition-based acceptance)
+   - **MTDSWA path**: `spot::sbacc` + `spot::dtwa_to_mtdswa` + `sinks_as_states()` (state-based acceptance)
 3. Build a Zielonka tree from the acceptance condition
-4. Recursively solve the Emerson-Lei game over the Zielonka tree nodes (`SolveAutEL_t`)
+4. Recursively solve the Emerson-Lei game over the Zielonka tree nodes
 5. Compute attractors using BDD quantification — Player 0 (system) existentially quantifies over controllable variables, Player 1 (environment) over uncontrollable ones
 6. Return the set of winning states for Player 0
+
+### MTDSWA sink handling
+
+The MTDSWA backend identifies accepting sink states (self-loop terminals whose color satisfies the acceptance condition) and treats them as absolute wins for the accepting player, bypassing the `HierachicalChecker`. This correctly handles cases where the MTDTWA backend would collapse such sinks into `bddtrue` and lose acceptance information.

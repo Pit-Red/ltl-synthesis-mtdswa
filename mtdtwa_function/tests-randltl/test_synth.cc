@@ -1,8 +1,10 @@
 #include "ltlgen.hh"
 #include "ltlsynt.hh"
 #include "../solve_el_aut.hh"
+#include "../solve_el_aut_swa.hh"
 
 #include <iostream>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -106,23 +108,41 @@ int main(int argc, char const *argv[])
 
         spot::twa_graph_ptr automaton = generate_automata(formula, synt_opts.inputs, synt_opts.outputs);
         std::cout << "Automaton acceptance condition: " << automaton->get_acceptance() << "\n";
+
+        // EL_SOLVER env: "twa" = mtdtwa only, "swa" = mtdswa only, "both" or unset = both
+        const char* solver_env = std::getenv("EL_SOLVER");
+        std::string solver_mode = solver_env ? solver_env : "both";
+        bool run_twa = (solver_mode == "twa" || solver_mode == "both");
+        bool run_swa = (solver_mode == "swa" || solver_mode == "both");
+
         try
         {
             std::cout << "Number of states in the automaton: " << automaton->num_states() << "\n";
-            StateSet w_partition = SolveAutEL(automaton, synt_opts.outputs);
-            bool el_realizable = w_partition.count(automaton->get_init_state_number()) > 0;
-            std::cout << "Realizable (SolveAutEL): " << (el_realizable ? "Yes" : "No") << "\n";
-            std::cout << "Winning states: ";
-            for (const auto& state : w_partition) {
-                std::cout << state << " ";
-            }
-            std::cout << "\n";
 
-            if (el_realizable != res.realizable) {
-                mismatches++;
-                std::cerr << "MISMATCH: ltlsynt=" << (res.realizable ? "REALIZABLE" : "UNREALIZABLE")
-                          << " SolveAutEL=" << (el_realizable ? "REALIZABLE" : "UNREALIZABLE")
-                          << " formula=" << formula << "\n";
+            if (run_twa) {
+                StateSet w_partition = SolveAutEL(automaton, synt_opts.outputs);
+                bool el_realizable = w_partition.count(automaton->get_init_state_number()) > 0;
+                std::cout << "Realizable (mtdtwa): " << (el_realizable ? "Yes" : "No") << "\n";
+
+                if (el_realizable != res.realizable) {
+                    mismatches++;
+                    std::cerr << "MISMATCH: ltlsynt=" << (res.realizable ? "REALIZABLE" : "UNREALIZABLE")
+                              << " mtdtwa=" << (el_realizable ? "REALIZABLE" : "UNREALIZABLE")
+                              << " formula=" << formula << "\n";
+                }
+            }
+
+            if (run_swa) {
+                StateSet w_partition_swa = SolveAutEL_swa(automaton, synt_opts.outputs);
+                bool swa_realizable = w_partition_swa.count(automaton->get_init_state_number()) > 0;
+                std::cout << "Realizable (mtdswa): " << (swa_realizable ? "Yes" : "No") << "\n";
+
+                if (swa_realizable != res.realizable) {
+                    mismatches++;
+                    std::cerr << "MISMATCH: ltlsynt=" << (res.realizable ? "REALIZABLE" : "UNREALIZABLE")
+                              << " mtdswa=" << (swa_realizable ? "REALIZABLE" : "UNREALIZABLE")
+                              << " formula=" << formula << "\n";
+                }
             }
         }
         catch(const std::exception& e)
