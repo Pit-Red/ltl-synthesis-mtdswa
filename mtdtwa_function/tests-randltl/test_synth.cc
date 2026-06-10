@@ -94,6 +94,10 @@ int main(int argc, char const *argv[])
     LtlSyntOptions synt_opts;
     synt_opts.inputs = atomic_props_input;
     synt_opts.outputs = atomic_props_output;
+    synt_opts.algo = "acd";
+    synt_opts.simplify = "no";
+    synt_opts.decompose = "yes";
+    synt_opts.bypass = "yes";
 
     int count = 0;
     int mismatches = 0;

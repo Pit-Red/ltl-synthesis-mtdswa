@@ -124,6 +124,7 @@ static int global_current_player = 0;
 static unsigned global_accepting_sink_terminal = -1U; // terminal index of the accepting sink
 static unsigned global_rejecting_sink_terminal = -1U; // terminal index of the rejecting sink
 static int global_accepting_player = 0; // player who wins from accepting plays
+static const StateSet* global_excluded = nullptr; // states excluded from becoming winning
 
 
 // alias for readability: map from mark/state → **set** of ints
@@ -142,6 +143,12 @@ static int is_winning_terminal_with_acc(int v) {
         return global_current_player != global_accepting_player;
 
     const auto& d = (*global_mtdta)->terminal_data_map[dst];
+
+    // If the destination state is excluded (already determined as losing),
+    // it cannot be considered winning regardless of acceptance marks.
+    if (global_excluded && global_excluded->count(d.second) > 0)
+        return false;
+
     bool acc_win = global_hierarchical_checker->check(d.first, global_current_player);
     if (acc_win)
         TRACE(CLR_DIM "    winning terminal: state=" << d.second << " acc_mark=" << d.first << CLR_RESET "\n");
@@ -177,11 +184,13 @@ StateSet attractor_states(
     const HierachicalChecker& hc,
     const std::vector<std::string>& controllable_var_names,
     const StateSet& seed,
+    const StateSet& excluded,
     const int current_player
 ) {
     TRACE(CLR_DIM "attractor(" << fmt_player(current_player)
           << CLR_DIM << ", w_acc=" << fmt_marks(hc.get_ordered_marks())
-          << ", seed=" << fmt_set(seed) << ")" CLR_RESET "\n");
+          << ", seed=" << fmt_set(seed)
+          << ", excluded=" << fmt_set(excluded) << ")" CLR_RESET "\n");
 
     bddExtCache cache;
     bdd_extcache_init(&cache, size_estimate_unary(mtdta), false);
@@ -193,6 +202,7 @@ StateSet attractor_states(
     global_hierarchical_checker = &hc;
     global_mtdta = &mtdta;
     global_current_player = current_player;
+    global_excluded = &excluded;
 
     // Prepare for quantification over controllable variables
     bdd quantified_vars;
@@ -221,6 +231,8 @@ StateSet attractor_states(
             // std::cout << "  checking state " << i <<"\n";
 
             if (winning[i])
+                continue;
+            if (excluded.count(i) > 0)
                 continue;
             bdd b = mtdta->states[i];
 
@@ -361,6 +373,7 @@ restart:
                     *hc_prime,
                     *global_controllable_var_names,
                     w_partition,
+                    l_partition,  // excluded: states already marked as losing
                     w_player
                 );
             TRACE("  W[0] = " << fmt_set(W[0]) << "\n");
@@ -401,6 +414,7 @@ restart:
                         *hc_double_prime,
                         *global_controllable_var_names,
                         l_partition,
+                        W[2*j],  // excluded: states already marked as winning
                         l_player  // switch player
                     );
                     TRACE("    L = " << fmt_set(L) << "\n");
@@ -447,6 +461,7 @@ restart:
                     *hc_prime,
                     *global_controllable_var_names,
                     W[2*j + 1],
+                    l_partition,  // excluded: states already marked as losing
                     w_player
                 );
                 TRACE("  W[" << 2*j+2 << "] = " << fmt_set(W[2*j + 2]) << "\n");
@@ -456,8 +471,17 @@ restart:
                   << "  W[" << 2*j << "]=" << fmt_set(W[2*j]) << "\n");
 
             if (!equal_statesets(union_statesets(W[2*j], l_partition), *global_states)) {
-                // l_partition has not yet absorbed all states — extend it and retry.
-                l_partition = union_statesets(l_partition, difference_statesets(*global_states, W[2*j]));
+                // l_partition has not yet absorbed all states — extend it
+                // via L-attractor and retry (pseudocode: L_se = autattr_1(W_in, L_se ∪ (V\W_2j), f_t)).
+                StateSet new_l_seed = union_statesets(l_partition, difference_statesets(*global_states, W[2*j]));
+                l_partition = attractor_states(
+                    *global_mtdta,
+                    *hc,
+                    *global_controllable_var_names,
+                    new_l_seed,
+                    w_partition,  // excluded: states already marked as winning
+                    l_player
+                );
                 TRACE(CLR_RED CLR_BOLD "  RESTART" CLR_RESET
                       " W[2j] \u222a L != V, growing l_partition\n");
                 TRACE("  l_partition = " << fmt_set(l_partition)
@@ -597,6 +621,11 @@ SolveAutEL(
         zl_tree->is_even()
     );
 
+    // The algorithm returns w_player's winning set.  When is_even is
+    // false, w_player is 1 (env), so we must complement to get player 0's
+    // (sys) winning set, which is what the caller expects.
+    if (!zl_tree->is_even())
+        result = difference_statesets(aut_states, result);
 
     delete hc;
     delete zl_tree;

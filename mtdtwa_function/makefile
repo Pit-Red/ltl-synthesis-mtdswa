@@ -12,6 +12,7 @@ BUILD_DIR := build
 # =============================================================================
 BIN_MAIN        := el_solver     # test.cc          – run EL solver on a formula
 BIN_SYNTH       := synth_runner  # test_synth.cc    – random LTL vs ltlsynt validation
+BIN_BENCH       := bench_runner  # test_bench.cc    – benchmark swa vs ltlsynt with timing
 BIN_TLSF        := tlsf_runner   # test_tlsf.cc     – solve a single TLSF benchmark
 BIN_TLSF_BATCH  := tlsf_batch    # test_tlsf_batch  – solve a folder of TLSF benchmarks
 
@@ -22,6 +23,10 @@ CORE_SRCS := solve_el_aut.cc solve_el_aut_swa.cc HierachicalChecker.cc
 
 SRCS_MAIN       := test.cc                              $(CORE_SRCS)
 SRCS_SYNTH      := tests-randltl/test_synth.cc          \
+                   tests-randltl/ltlgen.cc               \
+                   tests-randltl/ltlsynt.cc              \
+                   $(CORE_SRCS)
+SRCS_BENCH      := tests-randltl/test_bench.cc          \
                    tests-randltl/ltlgen.cc               \
                    tests-randltl/ltlsynt.cc              \
                    $(CORE_SRCS)
@@ -37,16 +42,17 @@ SRCS_TLSF_BATCH := tests-tlsf/test_tlsf_batch.cc        \
 # =============================================================================
 OBJS_MAIN       := $(SRCS_MAIN:%.cc=$(BUILD_DIR)/%.o)
 OBJS_SYNTH      := $(SRCS_SYNTH:%.cc=$(BUILD_DIR)/%.o)
+OBJS_BENCH      := $(SRCS_BENCH:%.cc=$(BUILD_DIR)/%.o)
 OBJS_TLSF       := $(SRCS_TLSF:%.cc=$(BUILD_DIR)/%.o)
 OBJS_TLSF_BATCH := $(SRCS_TLSF_BATCH:%.cc=$(BUILD_DIR)/%.o)
 
-DEPS := $(OBJS_MAIN:.o=.d) $(OBJS_SYNTH:.o=.d) $(OBJS_TLSF:.o=.d) $(OBJS_TLSF_BATCH:.o=.d)
+DEPS := $(OBJS_MAIN:.o=.d) $(OBJS_SYNTH:.o=.d) $(OBJS_BENCH:.o=.d) $(OBJS_TLSF:.o=.d) $(OBJS_TLSF_BATCH:.o=.d)
 
 # =============================================================================
 # Default: build everything
 # =============================================================================
 .PHONY: all
-all: $(BIN_MAIN) $(BIN_SYNTH) $(BIN_TLSF) $(BIN_TLSF_BATCH)
+all: $(BIN_MAIN) $(BIN_SYNTH) $(BIN_BENCH) $(BIN_TLSF) $(BIN_TLSF_BATCH)
 
 # =============================================================================
 # Link rules
@@ -55,6 +61,9 @@ $(BIN_MAIN): $(OBJS_MAIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BIN_SYNTH): $(OBJS_SYNTH)
+	$(CXX) $^ -o $@ $(LDFLAGS) $(LDLIBS)
+
+$(BIN_BENCH): $(OBJS_BENCH)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BIN_TLSF): $(OBJS_TLSF)
@@ -82,7 +91,7 @@ $(BUILD_DIR)/%.o: %.cc
 #   make tlsf        ARGS="tests-tlsf/testing_data/selection-ltl-2025/arbiter_2.tlsf"
 #   make tlsf-batch  ARGS="tests-tlsf/testing_data/selection-ltl-2025/"
 # =============================================================================
-.PHONY: run run-twa run-swa synth synth-twa synth-swa tlsf tlsf-batch
+.PHONY: run run-twa run-swa synth synth-twa synth-swa bench tlsf tlsf-batch
 
 run: $(BIN_MAIN)
 	./$(BIN_MAIN) "$(FORMULA)" "$(CONTR_VRB)"
@@ -101,6 +110,9 @@ synth-twa: $(BIN_SYNTH)
 
 synth-swa: $(BIN_SYNTH)
 	EL_SOLVER=swa ./$(BIN_SYNTH) $(ARGS)
+
+bench: $(BIN_BENCH)
+	./$(BIN_BENCH) $(ARGS)
 
 tlsf: $(BIN_TLSF)
 	./$(BIN_TLSF) $(ARGS)
@@ -133,6 +145,6 @@ sanitize: clean all
 # =============================================================================
 .PHONY: clean
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_MAIN) $(BIN_SYNTH) $(BIN_TLSF) $(BIN_TLSF_BATCH)
+	rm -rf $(BUILD_DIR) $(BIN_MAIN) $(BIN_SYNTH) $(BIN_BENCH) $(BIN_TLSF) $(BIN_TLSF_BATCH)
 
 -include $(DEPS)

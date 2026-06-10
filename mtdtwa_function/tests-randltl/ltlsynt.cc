@@ -1,4 +1,5 @@
 #include "ltlsynt.hh"
+#include <sstream>
 
 static std::string join_comma(const std::vector<std::string>& items) {
     std::string out;
@@ -34,7 +35,36 @@ static std::string read_all_from_fd(int fd) {
     return output;
 }
 
-static std::string run_ltlsynt_single_formula(const std::string& formula,
+// Parses ltlsynt --csv output to extract total_time (in seconds), returns ms.
+// CSV format: header line, then data line with total_time at column index 4.
+static double parse_csv_total_time(const std::string& csv_output) {
+    // Find the data line (second line)
+    auto nl = csv_output.find('\n');
+    if (nl == std::string::npos) return -1;
+    std::string data_line = trim(csv_output.substr(nl + 1));
+    if (data_line.empty()) return -1;
+
+    // total_time is the 5th field (index 4)
+    std::istringstream iss(data_line);
+    std::string field;
+    for (int i = 0; i <= 4; ++i) {
+        if (!std::getline(iss, field, ',')) return -1;
+    }
+    try {
+        return std::stod(field) * 1000.0; // seconds -> ms
+    } catch (...) {
+        return -1;
+    }
+}
+
+struct RawLtlSyntOutput {
+    std::string stdout_text;
+    std::string stderr_text;
+    bool error = false;
+    std::string error_msg;
+};
+
+static RawLtlSyntOutput run_ltlsynt_single_formula(const std::string& formula,
                                               const LtlSyntOptions& opts) {
     if (formula.empty()) {
         throw std::invalid_argument("formula must not be empty.");
@@ -75,6 +105,21 @@ static std::string run_ltlsynt_single_formula(const std::string& formula,
         args.emplace_back("--simplify=" + *opts.simplify);
     }
 
+    if (opts.bypass.has_value()) {
+        args.emplace_back("--bypass=" + *opts.bypass);
+    }
+
+    if (opts.decompose.has_value()) {
+        args.emplace_back("--decompose=" + *opts.decompose);
+    }
+
+    if (opts.splittype.has_value()) {
+        args.emplace_back("--splittype=" + *opts.splittype);
+    }
+
+    // Request CSV timing output on stderr
+    args.emplace_back("--csv=/dev/stderr");
+
     args.emplace_back("-f");
     args.emplace_back(formula);
 
@@ -85,46 +130,55 @@ static std::string run_ltlsynt_single_formula(const std::string& formula,
     }
     argv.push_back(nullptr);
 
-    int pipefd[2];
-    if (pipe(pipefd) == -1) {
-        throw std::runtime_error("pipe() failed.");
+    int stdout_pipe[2];
+    int stderr_pipe[2];
+    if (pipe(stdout_pipe) == -1) {
+        throw std::runtime_error("pipe() failed for stdout.");
+    }
+    if (pipe(stderr_pipe) == -1) {
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
+        throw std::runtime_error("pipe() failed for stderr.");
     }
 
     pid_t pid = fork();
     if (pid == -1) {
-        close(pipefd[0]);
-        close(pipefd[1]);
+        close(stdout_pipe[0]); close(stdout_pipe[1]);
+        close(stderr_pipe[0]); close(stderr_pipe[1]);
         throw std::runtime_error("fork() failed.");
     }
 
     if (pid == 0) {
-        close(pipefd[0]);
+        close(stdout_pipe[0]);
+        close(stderr_pipe[0]);
 
-        if (dup2(pipefd[1], STDOUT_FILENO) == -1) {
-            _exit(127);
-        }
-        if (dup2(pipefd[1], STDERR_FILENO) == -1) {
-            _exit(127);
-        }
-        close(pipefd[1]);
+        if (dup2(stdout_pipe[1], STDOUT_FILENO) == -1) _exit(127);
+        if (dup2(stderr_pipe[1], STDERR_FILENO) == -1) _exit(127);
+        close(stdout_pipe[1]);
+        close(stderr_pipe[1]);
 
         execvp("ltlsynt", argv.data());
         _exit(127);
     }
 
-    close(pipefd[1]);
+    close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
 
-    std::string output;
+    RawLtlSyntOutput raw;
+
     try {
-        output = read_all_from_fd(pipefd[0]);
+        raw.stdout_text = read_all_from_fd(stdout_pipe[0]);
+        raw.stderr_text = read_all_from_fd(stderr_pipe[0]);
     } catch (...) {
-        close(pipefd[0]);
+        close(stdout_pipe[0]);
+        close(stderr_pipe[0]);
         int status = 0;
         waitpid(pid, &status, 0);
         throw;
     }
 
-    close(pipefd[0]);
+    close(stdout_pipe[0]);
+    close(stderr_pipe[0]);
 
     int status = 0;
     if (waitpid(pid, &status, 0) == -1) {
@@ -132,22 +186,20 @@ static std::string run_ltlsynt_single_formula(const std::string& formula,
     }
 
     if (!WIFEXITED(status)) {
-        throw std::runtime_error("ltlsynt terminated abnormally.\nOutput:\n" + output);
+        raw.error = true;
+        raw.error_msg = "ltlsynt terminated by signal.\nStderr:\n" + raw.stderr_text;
+        return raw;
     }
 
     int exit_code = WEXITSTATUS(status);
-
-    // ltlsynt semantics:
-    // 0 = realizable
-    // 1 = unrealizable
-    // 2 = actual tool error
     if (exit_code == 2) {
-        throw std::runtime_error("ltlsynt reported an error.\nOutput:\n" + output);
+        raw.error = true;
+        raw.error_msg = "ltlsynt reported an error.\nStderr:\n" + raw.stderr_text;
+        return raw;
     }
 
-    // exit_code 0 or 1 are both valid synthesis outcomes
-
-    return trim(output);
+    raw.stdout_text = trim(raw.stdout_text);
+    return raw;
 }
 
 static SynthesisResult parse_ltlsynt_output(const std::string& formula,
@@ -205,8 +257,17 @@ SynthesisResult solve_with_ltlsynt(
             "REALIZABLE/UNREALIZABLE would become ambiguous."
         );
     }
-    const std::string raw = run_ltlsynt_single_formula(formula, opts);
-    return parse_ltlsynt_output(formula, raw, opts.realizability_only);
+    RawLtlSyntOutput raw = run_ltlsynt_single_formula(formula, opts);
+    if (raw.error) {
+        SynthesisResult result;
+        result.formula = formula;
+        result.error = true;
+        result.error_msg = raw.error_msg;
+        return result;
+    }
+    SynthesisResult result = parse_ltlsynt_output(formula, raw.stdout_text, opts.realizability_only);
+    result.internal_time_ms = parse_csv_total_time(raw.stderr_text);
+    return result;
 }
 
 std::vector<SynthesisResult> solve_with_ltlsynt(
@@ -229,8 +290,18 @@ std::vector<SynthesisResult> solve_with_ltlsynt(
     results.reserve(formulas.size());
 
     for (const auto& formula : formulas) {
-        const std::string raw = run_ltlsynt_single_formula(formula, opts);
-        results.push_back(parse_ltlsynt_output(formula, raw, opts.realizability_only));
+        RawLtlSyntOutput raw = run_ltlsynt_single_formula(formula, opts);
+        if (raw.error) {
+            SynthesisResult result;
+            result.formula = formula;
+            result.error = true;
+            result.error_msg = raw.error_msg;
+            results.push_back(std::move(result));
+            continue;
+        }
+        SynthesisResult result = parse_ltlsynt_output(formula, raw.stdout_text, opts.realizability_only);
+        result.internal_time_ms = parse_csv_total_time(raw.stderr_text);
+        results.push_back(std::move(result));
     }
 
     return results;
