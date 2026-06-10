@@ -112,6 +112,7 @@ using ZlPtr = spot::zielonka_tree*;
 // Globals for BDD callback (same pattern as mtdtwa version)
 // =========================================================================
 static std::vector<bool>* global_is_winning = nullptr;
+static std::vector<bool>* global_is_losing = nullptr;
 static const HierachicalChecker* global_hierarchical_checker = nullptr;
 static const spot::mtdswa_ptr* global_mtdswa = nullptr;
 static const StateSet* global_states = nullptr; // V
@@ -122,6 +123,7 @@ static const spot::twa_graph_ptr* global_aut = nullptr;
 static int global_current_player = 0;
 static std::vector<bool>* global_is_accepting_sink = nullptr;
 static int global_accepting_player = 0; // player who wins from accepting plays
+static const StateSet* global_excluded = nullptr; // states excluded from becoming winning
 
 
 // alias for readability: map from mark/state → **set** of ints
@@ -137,14 +139,19 @@ static int is_winning_terminal_with_acc(int v) {
     // Accepting sink: always winning for the accepting player, always
     // losing for the other.  No marks needed — the play stays in the
     // sink forever and the acceptance outcome is fixed.
-    if ((*global_is_accepting_sink)[dst])
-        return global_current_player == global_accepting_player;
+    // if ((*global_is_accepting_sink)[dst])
+    //     return global_current_player == global_accepting_player;
+
+    // If the destination state is excluded (already determined as losing),
+    // it cannot be considered winning regardless of acceptance marks.
+    
+    bool is_excluded = global_excluded && global_excluded->count(dst) > 0;
 
     const auto& mark = (*global_mtdswa)->colors[dst];
     bool acc_win = global_hierarchical_checker->check(mark, global_current_player);
     if (acc_win)
         TRACE(CLR_DIM "    winning terminal: state=" << dst << " color=" << mark << CLR_RESET "\n");
-    return acc_win || (*global_is_winning)[dst];
+    return (*global_is_winning)[dst] || (acc_win && !is_excluded);
 }
 
 // Function to estimate size for BDD cache
@@ -176,11 +183,13 @@ StateSet attractor_states_swa(
     const HierachicalChecker& hc,
     const std::vector<std::string>& controllable_var_names,
     const StateSet& seed,
+    const StateSet& excluded,
     const int current_player
 ) {
     TRACE(CLR_DIM "attractor(" << fmt_player(current_player)
           << CLR_DIM << ", w_acc=" << fmt_marks(hc.get_ordered_marks())
-          << ", seed=" << fmt_set(seed) << ")" CLR_RESET "\n");
+          << ", seed=" << fmt_set(seed)
+          << ", excluded=" << fmt_set(excluded) << ")" CLR_RESET "\n");
 
     bddExtCache cache;
     bdd_extcache_init(&cache, size_estimate_unary(mtdswa), false);
@@ -192,18 +201,15 @@ StateSet attractor_states_swa(
     global_hierarchical_checker = &hc;
     global_current_player = current_player;
     global_mtdswa = &mtdswa;
+    global_excluded = &excluded;
 
     // Prepare for quantification over controllable variables
     bdd quantified_vars;
 
-    if (current_player == 0){
-        quantified_vars = variables_to_bdd_swa(*global_aut, *global_inverted_controllable_var_names);
-        mtdswa->sinks_as_constants(false); // convert sinks to bddfalse for correct quantification
-    }
-    else {
+    if (current_player == 0)
         quantified_vars = variables_to_bdd_swa(*global_aut, *global_controllable_var_names);
-        mtdswa->sinks_as_constants(true); // convert sinks to bddtrue for correct quantification
-    }
+    else
+        quantified_vars = variables_to_bdd_swa(*global_aut, *global_inverted_controllable_var_names);
 
     bdd_mt_quantify_prepare(quantified_vars);
 
@@ -212,11 +218,27 @@ StateSet attractor_states_swa(
             winning[i] = true;
     }
 
+    // Pre-seed: root states whose color already satisfies the acceptance
+    // condition (via the HierarchicalChecker) are immediately winning,
+    // without needing the BDD fixed-point to discover them.
+    for (unsigned i = 0; i < nroots; ++i) {
+        if (winning[i])
+            continue;
+        // const auto& color = (*global_mtdswa)->colors[i];
+        // if (hc.check(color, current_player)) {
+        //     winning[i] = true;
+        //     TRACE(CLR_DIM "  pre-seed: root state " << i
+        //           << " already winning (color=" << color << ")" CLR_RESET "\n");
+        // }
+    }
+
     bool has_changed;
     do {
         has_changed = false;
         for (unsigned i = 0; i < nroots; ++i) {
             if (winning[i])
+                continue;
+            if (excluded.count(i) > 0)
                 continue;
             bdd b = mtdswa->states[i];
 
@@ -347,6 +369,7 @@ restart:
                     *hc_prime,
                     *global_controllable_var_names,
                     w_partition,
+                    l_partition,  // excluded: states already marked as losing
                     w_player
                 );
             TRACE("  W[0] = " << fmt_set(W[0]) << "\n");
@@ -385,21 +408,17 @@ restart:
                         *hc_double_prime,
                         *global_controllable_var_names,
                         l_partition,
+                        W[2*j],  // excluded: states already marked as winning
                         l_player  // switch player
                     );
                     TRACE("    L = " << fmt_set(L) << "\n");
 
-                    StateSet restricted_l = union_statesets_swa(
-                        L,
-                        difference_statesets_swa(*global_states, W[2*j])
-                    );
-
                     TRACE("    " CLR_BOLD "RECURSE" CLR_RESET " into zlk_node="
-                          << child_it_index << " with restricted_l="
-                          << fmt_set(restricted_l) << "\n");
+                          << child_it_index << " with L="
+                          << fmt_set(L) << "\n");
                     W[2*j + 1] = SolveAutEL_swa_t(
                         W[2*j],
-                        restricted_l,
+                        L,
                         zl_tree,
                         child_it_index,
                         hc_double_prime,
@@ -426,6 +445,7 @@ restart:
                     *hc_prime,
                     *global_controllable_var_names,
                     W[2*j + 1],
+                    l_partition,  // excluded: states already marked as losing
                     w_player
                 );
                 TRACE("  W[" << 2*j+2 << "] = " << fmt_set(W[2*j + 2]) << "\n");
@@ -435,7 +455,16 @@ restart:
                   << "  W[" << 2*j << "]=" << fmt_set(W[2*j]) << "\n");
 
             if (!equal_statesets_swa(union_statesets_swa(W[2*j], l_partition), *global_states)) {
-                l_partition = union_statesets_swa(l_partition, difference_statesets_swa(*global_states, W[2*j]));
+                // Pseudocode: L_se = autattr_1(W_in, L_se ∪ (V\W_2j), f_t)
+                StateSet new_l_seed = union_statesets_swa(l_partition, difference_statesets_swa(*global_states, W[2*j]));
+                l_partition = attractor_states_swa(
+                    *global_mtdswa,
+                    *hc,
+                    *global_controllable_var_names,
+                    new_l_seed,
+                    w_partition,  // excluded: states already marked as winning
+                    l_player
+                );
                 TRACE(CLR_RED CLR_BOLD "  RESTART" CLR_RESET
                       " W[2j] \u222a L != V, growing l_partition\n");
                 TRACE("  l_partition = " << fmt_set(l_partition)
@@ -557,7 +586,10 @@ SolveAutEL_swa(
         zl_tree->is_even()
     );
 
-    if (zl_tree->is_even())
+    // The algorithm returns w_player's winning set.  When is_even is
+    // false, w_player is 1 (env), so we must complement to get player 0's
+    // (sys) winning set, which is what the caller expects.
+    if (!zl_tree->is_even())
         result = difference_statesets_swa(aut_states, result);
 
     delete hc;

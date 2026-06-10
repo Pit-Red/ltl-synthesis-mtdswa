@@ -21,12 +21,11 @@ void save_datastructures(spot::twa_graph_ptr aut) {
     spot::mtdtwa_ptr mtdta = spot::dtwa_to_mtdtwa(aut);
     auto aut_sba = spot::sbacc(aut);
     spot::mtdswa_ptr mtdswa = spot::dtwa_to_mtdswa(aut_sba);
-    mtdswa->sinks_as_states();
     spot::zielonka_tree zl_tree = spot::zielonka_tree(aut->acc());
 
     std::string dot_folder = "img/";
 
-    std::vector<std::string> names_datastructures = {"aut", "mtdta", "mtdswa", "zl_tree"};
+    std::vector<std::string> names_datastructures = {"aut", "mtdta", "mtdswa", "mtdswa-sinks-as-states", "mtdswa-sinks-as-constants", "zl_tree"};
 
     for (const auto& name : names_datastructures) {
         std::string dot_path = dot_folder + name + ".dot";
@@ -42,6 +41,16 @@ void save_datastructures(spot::twa_graph_ptr aut) {
             mtdta->print_dot(dot_out);
         else if (name == "mtdswa")
             mtdswa->print_dot(dot_out);
+        else if (name == "mtdswa-sinks-as-states") {
+            auto mtdswa_copy = std::make_shared<spot::mtdswa>(*mtdswa);
+            mtdswa_copy->sinks_as_states();
+            mtdswa_copy->print_dot(dot_out);
+        }
+        else if (name == "mtdswa-sinks-as-constants") {
+            auto mtdswa_copy = std::make_shared<spot::mtdswa>(*mtdswa);
+            mtdswa_copy->sinks_as_constants();
+            mtdswa_copy->print_dot(dot_out);
+        }
         else if (name == "zl_tree")
             zl_tree.dot(dot_out);
 
@@ -197,6 +206,8 @@ int main(int argc, char** argv) {
         for (auto s : win_swa) std::cout << s << " ";
         std::cout << "\n";
         realizable_swa = win_swa.count(aut->get_init_state_number()) > 0;
+        std::cout << "Starting state " << aut->get_init_state_number()
+                  << (realizable_swa ? " is " : " is NOT ") << "winning in mtdswa\n";
         std::cout << "Realizable (mtdswa): " << (realizable_swa ? "Yes" : "No") << "\n";
     }
 

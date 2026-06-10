@@ -118,10 +118,11 @@ int main(int argc, char const *argv[])
         try
         {
             std::cout << "Number of states in the automaton: " << automaton->num_states() << "\n";
+            int starting_state = 0; // Assuming the initial state is always 0 for the generated automata
 
             if (run_twa) {
                 StateSet w_partition = SolveAutEL(automaton, synt_opts.outputs);
-                bool el_realizable = w_partition.count(automaton->get_init_state_number()) > 0;
+                bool el_realizable = w_partition.count(starting_state) > 0;
                 std::cout << "Realizable (mtdtwa): " << (el_realizable ? "Yes" : "No") << "\n";
 
                 if (el_realizable != res.realizable) {
@@ -134,7 +135,7 @@ int main(int argc, char const *argv[])
 
             if (run_swa) {
                 StateSet w_partition_swa = SolveAutEL_swa(automaton, synt_opts.outputs);
-                bool swa_realizable = w_partition_swa.count(automaton->get_init_state_number()) > 0;
+                bool swa_realizable = w_partition_swa.count(starting_state) > 0;
                 std::cout << "Realizable (mtdswa): " << (swa_realizable ? "Yes" : "No") << "\n";
 
                 if (swa_realizable != res.realizable) {
