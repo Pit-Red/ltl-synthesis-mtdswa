@@ -2,12 +2,12 @@
 #define HIERACHICALCHECKER_HH
 
 #include <spot/twa/acc.hh>
-#include <set>
+#include <vector>
 #include <utility>
 #include <initializer_list>
 
 using MarkPair = std::pair<spot::acc_cond::mark_t, int>;
-using OrderedMarkList = std::set<MarkPair>;
+using OrderedMarkList = std::vector<MarkPair>;
 
 class HierachicalChecker {
 public:

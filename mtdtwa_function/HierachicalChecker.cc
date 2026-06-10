@@ -21,7 +21,7 @@ HierachicalChecker* HierachicalChecker::new_instance(const spot::acc_cond::mark_
 
     // Append the new mark: alternate players, using starting_player for the first entry
     int player = new_marks.empty() ? starting_player : (new_marks.rbegin()->second == 0 ? 1 : 0);
-    new_marks.insert(std::make_pair(mark, player));
+    new_marks.push_back(std::make_pair(mark, player));
 
     // Create a new HierachicalChecker with the updated list
     return new HierachicalChecker(new_marks);
