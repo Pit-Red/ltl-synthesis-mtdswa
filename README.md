@@ -7,7 +7,7 @@ Given an LTL specification and a partition of atomic propositions into controlla
 Two solver backends are available:
 
 - **MTDTWA** (`SolveAutEL`) — uses transition-based acceptance via `spot::dtwa_to_mtdtwa`
-- **MTDSWA** (`SolveAutEL_swa`) — uses state-based acceptance via `spot::dtwa_to_mtdswa`. This variant avoids a bug where `dtwa_to_mtdtwa` collapses accepting sink states into `bddtrue`, bypassing the terminal callback. With `mtdswa` + `sinks_as_states()`, sinks become proper states with acceptance colors that the `HierachicalChecker` can evaluate.
+- **MTDSWA** (`SolveAutEL_swa`) — uses state-based acceptance via `spot::dtwa_to_mtdswa`. The automaton is first converted from transition-based to state-based acceptance using `spot::sbacc()` (which moves acceptance marks from edges to states). This variant avoids a bug where `dtwa_to_mtdtwa` collapses accepting sink states into `bddtrue`, bypassing the terminal callback. With `mtdswa` + `sinks_as_states()`, sinks become proper states with acceptance colors that the `HierachicalChecker` can evaluate.
 
 ## Prerequisites
 
@@ -135,7 +135,7 @@ mtdtwa_function/
 1. Parse the LTL formula and build a deterministic complete TWA using Spot
 2. Convert the TWA to a multi-tape deterministic automaton:
    - **MTDTWA path**: `spot::dtwa_to_mtdtwa` (transition-based acceptance)
-   - **MTDSWA path**: `spot::sbacc` + `spot::dtwa_to_mtdswa` + `sinks_as_states()` (state-based acceptance)
+   - **MTDSWA path**: `spot::sbacc` (converts acceptance marks from edges to states) + `spot::dtwa_to_mtdswa` + `sinks_as_states()` (state-based acceptance)
 3. Build a Zielonka tree from the acceptance condition
 4. Recursively solve the Emerson-Lei game over the Zielonka tree nodes
 5. Compute attractors using BDD quantification — Player 0 (system) existentially quantifies over controllable variables, Player 1 (environment) over uncontrollable ones
