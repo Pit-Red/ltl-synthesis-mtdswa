@@ -1,4 +1,4 @@
-# ltl-synthesis-mtdtwa
+# ltl-synthesis-mtd(twa/swa)
 
 Game-theoretic LTL synthesis using multi-tape deterministic automata, built on top of the [Spot](https://spot.lrde.epita.fr/) formal verification library.
 
