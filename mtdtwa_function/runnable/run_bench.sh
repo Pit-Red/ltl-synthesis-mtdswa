@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ---- Configuration ----
 SEEDS=(42 123 256)
-TREE_SIZES=(10 15 20 25 30)
+TREE_SIZES=(40 50 60)
 N_SAMPLES=500
 INPUTS="r1,r2"
 OUTPUTS="g1,g2"

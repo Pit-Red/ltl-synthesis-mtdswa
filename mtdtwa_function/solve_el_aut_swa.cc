@@ -123,7 +123,9 @@ static const spot::twa_graph_ptr* global_aut = nullptr;
 static int global_current_player = 0;
 static std::vector<bool>* global_is_accepting_sink = nullptr;
 static int global_accepting_player = 0; // player who wins from accepting plays
-static const StateSet* global_excluded = nullptr; // states excluded from becoming winning
+static const std::vector<bool>* global_is_excluded = nullptr; // states excluded from becoming winning
+static bdd global_controllable_bdd;
+static bdd global_inverted_controllable_bdd;
 
 
 // alias for readability: map from mark/state → **set** of ints
@@ -145,7 +147,7 @@ static int is_winning_terminal_with_acc(int v) {
     // If the destination state is excluded (already determined as losing),
     // it cannot be considered winning regardless of acceptance marks.
     
-    bool is_excluded = global_excluded && global_excluded->count(dst) > 0;
+    bool is_excluded = global_is_excluded && (*global_is_excluded)[dst];
 
     const auto& mark = (*global_mtdswa)->colors[dst];
     bool acc_win = global_hierarchical_checker->check(mark, global_current_player);
@@ -201,44 +203,36 @@ StateSet attractor_states_swa(
     global_hierarchical_checker = &hc;
     global_current_player = current_player;
     global_mtdswa = &mtdswa;
-    global_excluded = &excluded;
 
-    // Prepare for quantification over controllable variables
-    bdd quantified_vars;
+    // Build fast lookup for excluded states
+    std::vector<bool> is_excluded(nroots, false);
+    for (unsigned s : excluded)
+        is_excluded[s] = true;
+    global_is_excluded = &is_excluded;
 
-    if (current_player == 0)
-        quantified_vars = variables_to_bdd_swa(*global_aut, *global_controllable_var_names);
-    else
-        quantified_vars = variables_to_bdd_swa(*global_aut, *global_inverted_controllable_var_names);
+    // Use precomputed BDD variables
+    bdd quantified_vars = (current_player == 0)
+        ? global_controllable_bdd
+        : global_inverted_controllable_bdd;
 
     bdd_mt_quantify_prepare(quantified_vars);
 
     for (unsigned i = 0; i < nroots; ++i) {
-        if (seed.count(i) > 0)
-            winning[i] = true;
-    }
-
-    // Pre-seed: root states whose color already satisfies the acceptance
-    // condition (via the HierarchicalChecker) are immediately winning,
-    // without needing the BDD fixed-point to discover them.
-    for (unsigned i = 0; i < nroots; ++i) {
-        if (winning[i])
+        if (is_excluded[i])
             continue;
-        // const auto& color = (*global_mtdswa)->colors[i];
-        // if (hc.check(color, current_player)) {
-        //     winning[i] = true;
-        //     TRACE(CLR_DIM "  pre-seed: root state " << i
-        //           << " already winning (color=" << color << ")" CLR_RESET "\n");
-        // }
+
+        const auto& mark = (*global_mtdswa)->colors[i];
+        bool acc_win = global_hierarchical_checker->check(mark, global_current_player);
+
+        if (seed.count(i) > 0 || acc_win)
+            winning[i] = true;
     }
 
     bool has_changed;
     do {
         has_changed = false;
         for (unsigned i = 0; i < nroots; ++i) {
-            if (winning[i])
-                continue;
-            if (excluded.count(i) > 0)
+            if (winning[i] || is_excluded[i])
                 continue;
             bdd b = mtdswa->states[i];
 
@@ -270,23 +264,9 @@ StateSet attractor_states_swa(
 }
 
 
-bool equal_statesets_swa(const StateSet& a, const StateSet& b) {
-    if (a.size() != b.size()) {
-        return false;
-    }
-    for (const auto& elem : a) {
-        if (b.find(elem) == b.end()) {
-            return false;
-        }
-    }
-    return true;
-}
-
 StateSet union_statesets_swa(const StateSet& a, const StateSet& b) {
     StateSet result = a;
-    for (const auto& elem : b) {
-        result.insert(elem);
-    }
+    result.insert(b.begin(), b.end());
     return result;
 }
 
@@ -374,7 +354,7 @@ restart:
                 );
             TRACE("  W[0] = " << fmt_set(W[0]) << "\n");
 
-            for (; j == 0 || !equal_statesets_swa(W[2*j], W[2*j-2]); j++){
+            for (; j == 0 || W[2*j] != W[2*j-2]; j++){
                 W.resize(2*j + 3);
 
                 TRACE(CLR_BOLD "\u251c\u2500 fixed-point iter j=" << j << CLR_RESET
@@ -427,7 +407,7 @@ restart:
                     TRACE("    returned W[" << 2*j+1 << "] = "
                           << fmt_set(W[2*j + 1]) << "\n");
 
-                    if (!equal_statesets_swa(W[2*j + 1], W[2*j])) {
+                    if (W[2*j + 1] != W[2*j]) {
                         TRACE("    " CLR_RED "W shrunk!" CLR_RESET
                               " W[" << 2*j+1 << "] != W[" << 2*j
                               << "] -> break children loop\n");
@@ -454,7 +434,7 @@ restart:
             TRACE("  fixed-point converged at j=" << j
                   << "  W[" << 2*j << "]=" << fmt_set(W[2*j]) << "\n");
 
-            if (!equal_statesets_swa(union_statesets_swa(W[2*j], l_partition), *global_states)) {
+            if (W[2*j].size() + l_partition.size() != global_states->size()) {
                 // Pseudocode: L_se = autattr_1(W_in, L_se ∪ (V\W_2j), f_t)
                 StateSet new_l_seed = union_statesets_swa(l_partition, difference_statesets_swa(*global_states, W[2*j]));
                 l_partition = attractor_states_swa(
@@ -522,6 +502,10 @@ SolveAutEL_swa(
         aut->ap()
     );
     global_inverted_controllable_var_names = &inverted_controllable_var_names;
+
+    // Precompute BDD variables once (avoids repeated register_proposition calls)
+    global_controllable_bdd = variables_to_bdd_swa(aut, controllable_vars_names);
+    global_inverted_controllable_bdd = variables_to_bdd_swa(aut, inverted_controllable_var_names);
 
     auto mtdswa = spot::dtwa_to_mtdswa(aut);
 
