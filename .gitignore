@@ -11,6 +11,7 @@ mtdtwa_function/el_solver
 mtdtwa_function/synth_runner
 mtdtwa_function/tlsf_runner
 mtdtwa_function/tlsf_batch
+mtdtwa_function/bench_runner
 mtdtwa_function/test_zlktree
 mtdtwa_function/tests-randltl/ltlsynt
 mtdtwa_function/tests-randltl/randltl_wrapper
