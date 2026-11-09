@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "delay_mealy"
+  DESCRIPTION: "Copy the input one step later. Realizable under both semantics."
+  SEMANTICS:   Mealy
+  TARGET:      Mealy
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (r <-> X g);
+  }
+}
+//#!SYNTCOMP
+//STATUS : realizable
+//#.

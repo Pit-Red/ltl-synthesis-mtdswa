@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "resp2_moore"
+  DESCRIPTION: "Grant every request in the same step, never both grants. Unrealizable under both semantics."
+  SEMANTICS:   Moore
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r1; r2; }
+  OUTPUTS { g1; g2; }
+  GUARANTEES {
+    G ((r1 -> g1) && (r2 -> g2)) && G !(g1 && g2);
+  }
+}
+//#!SYNTCOMP
+//STATUS : unrealizable
+//#.

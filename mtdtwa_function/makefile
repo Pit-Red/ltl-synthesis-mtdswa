@@ -121,6 +121,12 @@ tlsf: $(BIN_TLSF)
 tlsf-batch: $(BIN_TLSF_BATCH)
 	./$(BIN_TLSF_BATCH) $(ARGS)
 
+# Small TLSF specs with known answers (Mealy/Moore, Strict, SEMANTICS vs
+# TARGET); fails unless every spec matches ltlsynt and its //STATUS tag.
+.PHONY: tlsf-sanity
+tlsf-sanity: $(BIN_TLSF)
+	tests-tlsf/scripts/run_suite.sh -r -t 60 -o $(BUILD_DIR)/tlsf-sanity tests-tlsf/sanity
+
 # =============================================================================
 # Debug build  (rebuilds all objects with -g -O0)
 # =============================================================================

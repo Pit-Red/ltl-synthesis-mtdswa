@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "arb_moore"
+  DESCRIPTION: "Two-client arbiter with eventual grants, mutual exclusion. Realizable under Moore (alternate grants)."
+  SEMANTICS:   Moore
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r1; r2; }
+  OUTPUTS { g1; g2; }
+  GUARANTEES {
+    G (r1 -> F g1) && G (r2 -> F g2) && G !(g1 && g2);
+  }
+}
+//#!SYNTCOMP
+//STATUS : realizable
+//#.

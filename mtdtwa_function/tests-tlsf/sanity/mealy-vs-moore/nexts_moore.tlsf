@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "nexts_moore"
+  DESCRIPTION: "Respond to the input in the next step. Realizable under Moore."
+  SEMANTICS:   Moore
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (r -> X g) && G (!r -> X !g);
+  }
+}
+//#!SYNTCOMP
+//STATUS : realizable
+//#.

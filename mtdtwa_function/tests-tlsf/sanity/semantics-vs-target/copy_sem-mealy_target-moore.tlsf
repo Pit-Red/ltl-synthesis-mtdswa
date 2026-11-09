@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "copy_sem-mealy_target-moore"
+  DESCRIPTION: "SEMANTICS Mealy, TARGET Moore. The runner must follow SEMANTICS: realizable."
+  SEMANTICS:   Mealy
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (g <-> r);
+  }
+}
+//#!SYNTCOMP
+//STATUS : realizable
+//#.

@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "delay_moore"
+  DESCRIPTION: "Copy the input one step later. Realizable under both semantics."
+  SEMANTICS:   Moore
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (r <-> X g);
+  }
+}
+//#!SYNTCOMP
+//STATUS : realizable
+//#.

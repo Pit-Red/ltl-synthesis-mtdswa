@@ -22,6 +22,10 @@ mtdtwa_function/tests-tlsf/ts
 # TLSF benchmark data (third-party, not distributed)
 mtdtwa_function/tests-tlsf/testing_data/
 
+# Default output of tests-tlsf/scripts/run_suite.sh and tlsf_batch
+tlsf_results/
+mtdtwa_function/results.csv
+
 # IDE and editor files
 .vscode/
 .idea/

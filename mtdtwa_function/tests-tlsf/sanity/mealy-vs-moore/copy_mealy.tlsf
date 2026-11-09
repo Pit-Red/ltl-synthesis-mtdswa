@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "copy_mealy"
+  DESCRIPTION: "Copy the input in the same step. Realizable: under Mealy the system sees r before choosing g."
+  SEMANTICS:   Mealy
+  TARGET:      Mealy
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (g <-> r);
+  }
+}
+//#!SYNTCOMP
+//STATUS : realizable
+//#.

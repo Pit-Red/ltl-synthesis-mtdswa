@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "gf_moore"
+  DESCRIPTION: "Infinitely often agree with the input. Unrealizable under Moore: the environment always picks r != g."
+  SEMANTICS:   Moore
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G F (g <-> r);
+  }
+}
+//#!SYNTCOMP
+//STATUS : unrealizable
+//#.

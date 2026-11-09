@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "gf_mealy"
+  DESCRIPTION: "Infinitely often agree with the input. Realizable under Mealy (copy r)."
+  SEMANTICS:   Mealy
+  TARGET:      Mealy
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G F (g <-> r);
+  }
+}
+//#!SYNTCOMP
+//STATUS : realizable
+//#.

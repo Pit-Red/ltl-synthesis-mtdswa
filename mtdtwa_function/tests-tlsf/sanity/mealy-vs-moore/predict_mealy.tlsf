@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "predict_mealy"
+  DESCRIPTION: "Predict the next input. Unrealizable under both semantics."
+  SEMANTICS:   Mealy
+  TARGET:      Mealy
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (g <-> X r);
+  }
+}
+//#!SYNTCOMP
+//STATUS : unrealizable
+//#.

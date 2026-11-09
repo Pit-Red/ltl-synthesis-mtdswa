@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "predict_moore"
+  DESCRIPTION: "Predict the next input. Unrealizable under both semantics."
+  SEMANTICS:   Moore
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (g <-> X r);
+  }
+}
+//#!SYNTCOMP
+//STATUS : unrealizable
+//#.

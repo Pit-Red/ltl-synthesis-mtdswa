@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "copy_sem-moore_target-mealy"
+  DESCRIPTION: "SEMANTICS Moore, TARGET Mealy. The runner must follow SEMANTICS: unrealizable. (ltlsynt --tlsf follows TARGET and says realizable.)"
+  SEMANTICS:   Moore
+  TARGET:      Mealy
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (g <-> r);
+  }
+}
+//#!SYNTCOMP
+//STATUS : unrealizable
+//#.

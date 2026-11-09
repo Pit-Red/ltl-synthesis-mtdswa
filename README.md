@@ -72,8 +72,8 @@ This produces four binaries:
 |--------|-------------|
 | `el_solver` | Main solver — parses an LTL formula, builds the automaton, solves the Emerson-Lei game |
 | `synth_runner` | Generates random LTL formulas and compares results against `ltlsynt` |
-| `tlsf_runner` | Solves a single TLSF benchmark file |
-| `tlsf_batch` | Batch-processes a folder of TLSF benchmarks |
+| `tlsf_runner` | Solves a single TLSF file with MTDSWA and compares the verdict with `ltlsynt` |
+| `tlsf_batch` | Same for every TLSF file under a folder; writes `results.csv` |
 
 ## Usage
 
@@ -93,10 +93,35 @@ make synth ARGS="r1,r2 g1,g2 42 20"        # both backends
 make synth-twa ARGS="r1,r2 g1,g2 42 20"    # MTDTWA only
 make synth-swa ARGS="r1,r2 g1,g2 42 20"    # MTDSWA only
 
-# TLSF benchmarks (requires syfco on PATH)
+# TLSF benchmarks (requires syfco and ltlsynt on PATH)
 make tlsf ARGS="path/to/spec.tlsf"
 make tlsf-batch ARGS="path/to/benchmark/folder/"
+make tlsf-sanity                       # small specs with known answers
 ```
+
+### TLSF tests
+
+`tlsf_runner` uses the MTDSWA backend only. It reads the specification
+under its TLSF `SEMANTICS` (Mealy, Moore, Strict,Mealy, Strict,Moore),
+reports whether it is realizable, and compares with an `ltlsynt` reference.
+Since `ltlsynt` cannot solve Moore games, the reference first converts the
+specification to Mealy semantics with `syfco -os mealy`. Exit code:
+0 = match, 1 = mismatch, 2 = inconclusive (error or timeout).
+
+For many files, `tests-tlsf/scripts/run_suite.sh` runs `tlsf_runner` in
+parallel with a time and memory limit per file, and summarizes the results.
+It also checks MTDSWA against the `//STATUS` tags used by SYNTCOMP:
+
+```bash
+# SYNTCOMP benchmarks: git clone https://github.com/SYNTCOMP/benchmarks
+tests-tlsf/scripts/run_suite.sh -j 5 -t 90 -o results/syntcomp ~/benchmarks/tlsf
+
+# The same benchmarks under Moore semantics (SYNTCOMP is almost all Mealy)
+tests-tlsf/scripts/make_moore_variants.sh ~/benchmarks/tlsf /tmp/tlsf-moore
+tests-tlsf/scripts/run_suite.sh -j 5 -t 90 -o results/syntcomp-moore /tmp/tlsf-moore
+```
+
+See `tests-tlsf/sanity/README.md` for the small hand-written specs.
 
 The solver backend can also be controlled via the `EL_SOLVER` environment variable: `twa`, `swa`, or `both` (default).
 
@@ -127,7 +152,9 @@ mtdtwa_function/
 └── tests-tlsf/                 TLSF benchmark tests
     ├── test_tlsf.cc            tlsf_runner entry point
     ├── test_tlsf_batch.cc      tlsf_batch entry point
-    └── extract_tlsf_info.cc/hh TLSF file parser
+    ├── extract_tlsf_info.cc/hh TLSF reader (syfco) and ltlsynt reference
+    ├── sanity/                 Small specs with known answers
+    └── scripts/                Parallel suite runner, Moore-variant generator
 ```
 
 ## Algorithm overview

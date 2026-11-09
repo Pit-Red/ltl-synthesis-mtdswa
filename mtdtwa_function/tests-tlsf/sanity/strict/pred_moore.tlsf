@@ -1,0 +1,20 @@
+INFO {
+  TITLE:       "pred_moore"
+  DESCRIPTION: "Non-strict: G r -> G (g <-> X r). Realizable: keep g high; it is only wrong once r drops."
+  SEMANTICS:   Moore
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  REQUIRE {
+    r;
+  }
+  ASSERT {
+    g <-> X r;
+  }
+}
+//#!SYNTCOMP
+//STATUS : realizable
+//#.

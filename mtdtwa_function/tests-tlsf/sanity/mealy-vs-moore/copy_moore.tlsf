@@ -1,0 +1,17 @@
+INFO {
+  TITLE:       "copy_moore"
+  DESCRIPTION: "Copy the input in the same step. Unrealizable: under Moore g is fixed before r is seen."
+  SEMANTICS:   Moore
+  TARGET:      Moore
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  GUARANTEES {
+    G (g <-> r);
+  }
+}
+//#!SYNTCOMP
+//STATUS : unrealizable
+//#.

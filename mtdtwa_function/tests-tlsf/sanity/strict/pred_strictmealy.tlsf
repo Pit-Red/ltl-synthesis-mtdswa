@@ -1,0 +1,20 @@
+INFO {
+  TITLE:       "pred_strictmealy"
+  DESCRIPTION: "Strict: (g <-> X r) W !r. Unrealizable: the system must predict the step at which r drops."
+  SEMANTICS:   Strict,Mealy
+  TARGET:      Mealy
+}
+
+MAIN {
+  INPUTS { r; }
+  OUTPUTS { g; }
+  REQUIRE {
+    r;
+  }
+  ASSERT {
+    g <-> X r;
+  }
+}
+//#!SYNTCOMP
+//STATUS : unrealizable
+//#.

@@ -21,8 +21,9 @@ Run targets (shortcuts that build then execute):
 ```bash
 make run FORMULA="GF a"                                          # el_solver with LTL formula
 make synth ARGS="r1,r2 g1,g2 42 20"                             # synth_runner <inputs> <outputs> <seed> <n>
-make tlsf ARGS="tests-tlsf/testing_data/selection-ltl-2025/arbiter_2.tlsf"
-make tlsf-batch ARGS="tests-tlsf/testing_data/selection-ltl-2025/"
+make tlsf ARGS="path/to/spec.tlsf"
+make tlsf-batch ARGS="path/to/folder/"
+make tlsf-sanity                                                 # small specs with known answers
 ```
 
 Dependencies: SPOT (`-lspot -lbddx`), searched at `/usr/local/lib` and `/opt/homebrew/lib`.
@@ -54,7 +55,7 @@ The project implements game-theoretic LTL synthesis using multi-tape determinist
 ### Test Infrastructure
 
 - `tests-randltl/` — random LTL formula generation (`ltlgen.cc`) and synthesis comparison via `ltlsynt` CLI; the `synth_runner` binary compares `ltlsynt` results against `SolveAutEL`
-- `tests-tlsf/` — TLSF benchmark tests; `extract_tlsf_info.cc` parses TLSF files (inputs, outputs, LTL spec, Mealy/Moore semantics); benchmarks in `tests-tlsf/testing_data/selection-ltl-2025/`
+- `tests-tlsf/` — TLSF tests. `tlsf_runner`/`tlsf_batch` use the MTDSWA backend (`SolveAutEL_swa`) only and compare with an `ltlsynt` reference. `extract_tlsf_info.cc` reads TLSF via syfco (`-f ltl -m fully -os mealy|moore`, so Strict semantics is encoded) and builds the reference (`syfco -f ltlxba -m fully -os mealy | ltlsynt --ins --outs`, lowercase names). Pitfalls: `ltlsynt --tlsf` follows TARGET not SEMANTICS and cannot do Moore; ltlsynt lowercases `--ins/--outs` but not the formula. `sanity/` holds small specs with `//STATUS` tags; `scripts/run_suite.sh` runs many files in parallel with time/memory limits. SYNTCOMP benchmarks are not in the repo (github.com/SYNTCOMP/benchmarks).
 
 ### Global State Pattern
 
