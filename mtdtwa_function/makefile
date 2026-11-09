@@ -2,8 +2,9 @@
 # Compiler & flags
 # =============================================================================
 CXX      := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I. -MMD -MP
-LDFLAGS  := -L/usr/local/lib -L/opt/homebrew/lib
+SPOT_PREFIX ?= $(HOME)/.local
+CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I. -I$(SPOT_PREFIX)/include -MMD -MP
+LDFLAGS  := -L$(SPOT_PREFIX)/lib -Wl,-rpath,$(SPOT_PREFIX)/lib -L/usr/local/lib -L/opt/homebrew/lib
 LDLIBS   := -lspot -lbddx
 BUILD_DIR := build
 
@@ -124,7 +125,7 @@ tlsf-batch: $(BIN_TLSF_BATCH)
 # Debug build  (rebuilds all objects with -g -O0)
 # =============================================================================
 .PHONY: debug
-debug: CXXFLAGS := -std=c++17 -Wall -Wextra -g -O0 -I. -MMD -MP
+debug: CXXFLAGS := -std=c++17 -Wall -Wextra -g -O0 -I. -I$(SPOT_PREFIX)/include -MMD -MP
 debug: clean all
 
 # =============================================================================
@@ -134,9 +135,9 @@ debug: clean all
 #   ./synth_runner r1,r2 g1,g2 42 20
 # =============================================================================
 .PHONY: sanitize
-sanitize: CXXFLAGS := -std=c++17 -Wall -Wextra -g -O1 -I. -MMD -MP \
+sanitize: CXXFLAGS := -std=c++17 -Wall -Wextra -g -O1 -I. -I$(SPOT_PREFIX)/include -MMD -MP \
                       -fsanitize=address,undefined -fno-omit-frame-pointer
-sanitize: LDFLAGS  := -L/usr/local/lib -L/opt/homebrew/lib \
+sanitize: LDFLAGS  := -L$(SPOT_PREFIX)/lib -Wl,-rpath,$(SPOT_PREFIX)/lib -L/usr/local/lib -L/opt/homebrew/lib \
                       -fsanitize=address,undefined
 sanitize: clean all
 
