@@ -1,5 +1,5 @@
 #include "extract_tlsf_info.hh"
-#include "../solve_el_aut.hh"
+#include "../solve_el_aut_swa.hh"
 
 #include <spot/tl/parse.hh>
 #include <spot/twaalgos/translate.hh>
@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <vector>
 #include <exception>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -24,6 +25,9 @@ struct CsvRow {
     bool deterministic = false;
     bool solver_ran = false;
     size_t winning_states_count = 0;
+    std::string mtdswa;    // "realizable" / "unrealizable" / "" if not run
+    std::string ltlsynt;   // REALIZABLE / UNREALIZABLE / TIMEOUT / ERROR / "" if not run
+    std::string result;    // MATCH / MISMATCH / INCONCLUSIVE
     std::string error;
 };
 
@@ -38,7 +42,7 @@ static std::string csv_escape(const std::string& s) {
 }
 
 static void write_csv_header(std::ofstream& csv) {
-    csv << "file_name,full_path,semantics,num_inputs,num_outputs,num_states,deterministic,solver_ran,winning_states_count,error\n";
+    csv << "file_name,full_path,semantics,num_inputs,num_outputs,num_states,deterministic,solver_ran,winning_states_count,mtdswa,ltlsynt,result,error\n";
 }
 
 static void write_csv_row(std::ofstream& csv, const CsvRow& row) {
@@ -52,6 +56,9 @@ static void write_csv_row(std::ofstream& csv, const CsvRow& row) {
         << (row.deterministic ? "true" : "false") << ","
         << (row.solver_ran ? "true" : "false") << ","
         << row.winning_states_count << ","
+        << row.mtdswa << ","
+        << row.ltlsynt << ","
+        << row.result << ","
         << csv_escape(row.error) << "\n";
 }
 
@@ -85,21 +92,23 @@ static spot::twa_graph_ptr build_automaton(const TlsfInfo& info) {
     });
 
     spot::translator trans(dict);
+    trans.set_type(spot::postprocessor::Generic);
     trans.set_pref(spot::postprocessor::Deterministic |
                    spot::postprocessor::Complete);
 
     return trans.run(f);
 }
 
-static CsvRow process_tlsf_file(const fs::path& path) {
+static CsvRow process_tlsf_file(const fs::path& path, unsigned ltlsynt_timeout) {
     CsvRow row;
     row.file_name = path.filename().string();
     row.full_path = path.string();
+    row.result = "INCONCLUSIVE";
 
     try {
         TlsfInfo info = extract_tlsf_info(path.string());
 
-        row.semantics = info.mealy_semantics ? "Mealy" : "Moore";
+        row.semantics = info.semantics;
         row.num_inputs = info.inputs.size();
         row.num_outputs = info.outputs.size();
 
@@ -108,35 +117,50 @@ static CsvRow process_tlsf_file(const fs::path& path) {
         row.num_states = aut->num_states();
         row.deterministic = aut->prop_universal().is_true();
 
-        std::cout << "Processing: " << row.file_name
+        std::cout << "  " << row.semantics
                   << " | states=" << row.num_states
-                  << " | deterministic=" << row.deterministic
-                  << "\n";
+                  << " | deterministic=" << row.deterministic;
 
-        if (row.deterministic) {
-            row.solver_ran = true;
+        if (!row.deterministic)
+            throw std::runtime_error("automaton is not deterministic");
 
-            // Adjust this depending on your solver convention:
-            // for Mealy usually environment controls inputs;
-            // you previously called SolveAutEL with outputs once.
-            StateSet w_partition = SolveAutEL(aut, info.outputs);
+        // MTDTWA (SolveAutEL) is not used: it has a known bug.
+        // The initial state is root 0, so realizable iff 0 is winning.
+        row.solver_ran = true;
+        StateSet win = SolveAutEL_swa(aut, info.outputs);
+        row.winning_states_count = win.size();
+        const bool swa_realizable = win.count(0) > 0;
+        row.mtdswa = swa_realizable ? "realizable" : "unrealizable";
+        std::cout << " | mtdswa=" << row.mtdswa;
 
-            row.winning_states_count = w_partition.size();
+        LtlsyntTlsfResult ref = ltlsynt_tlsf_realizability(path.string(), info, ltlsynt_timeout);
+        row.ltlsynt = to_string(ref.verdict);
+        std::cout << " | ltlsynt=" << row.ltlsynt;
+        if (ref.verdict == LtlsyntVerdict::Realizable || ref.verdict == LtlsyntVerdict::Unrealizable) {
+            const bool ref_realizable = ref.verdict == LtlsyntVerdict::Realizable;
+            row.result = (ref_realizable == swa_realizable) ? "MATCH" : "MISMATCH";
         }
+        std::cout << " | " << row.result << "\n";
     } catch (const std::exception& e) {
         row.error = e.what();
+        std::cout << " | ERROR: " << row.error << "\n";
     } catch (...) {
         row.error = "unknown error";
+        std::cout << " | ERROR: unknown\n";
     }
 
     return row;
 }
 
 int main(int argc, char const* argv[]) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <path_to_tlsf_directory>\n";
+    if (argc < 2 || argc > 3) {
+        std::cerr << "Usage: " << argv[0]
+                  << " <path_to_tlsf_directory> [ltlsynt_timeout_seconds=60]\n"
+                  << "Note: no per-file time limit for MTDSWA itself; for large\n"
+                  << "suites, run tlsf_runner per file under `timeout` instead.\n";
         return 1;
     }
+    const unsigned ltlsynt_timeout = argc == 3 ? std::stoul(argv[2]) : 60;
 
     fs::path input_path(argv[1]);
 
@@ -161,19 +185,31 @@ int main(int argc, char const* argv[]) {
     size_t total_files = 0;
     size_t deterministic_files = 0;
     size_t solver_runs = 0;
+    size_t matches = 0, mismatches = 0, inconclusive = 0;
 
-    for (const auto& entry : fs::directory_iterator(input_path)) {
+    // Recursive, sorted, so that nested benchmark families are included
+    // and the order is reproducible.
+    std::vector<fs::path> files;
+    for (const auto& entry : fs::recursive_directory_iterator(input_path)) {
         if (!entry.is_regular_file())
             continue;
 
         if (entry.path().extension() != ".tlsf")
             continue;
 
+        files.push_back(entry.path());
+    }
+    std::sort(files.begin(), files.end());
+
+    for (const fs::path& file : files) {
         ++total_files;
+        std::cout << "[" << total_files << "/" << files.size() << "] "
+                  << file.string() << "\n" << std::flush;
 
-        printf("Processing file: %s\n", entry.path().string().c_str());
-
-        CsvRow row = process_tlsf_file(entry.path());
+        CsvRow row = process_tlsf_file(file, ltlsynt_timeout);
+        if (row.result == "MATCH") ++matches;
+        else if (row.result == "MISMATCH") ++mismatches;
+        else ++inconclusive;
 
         if (row.deterministic)
             ++deterministic_files;
@@ -187,7 +223,9 @@ int main(int argc, char const* argv[]) {
     std::cout << "Total .tlsf files: " << total_files << "\n";
     std::cout << "Deterministic automata: " << deterministic_files << "\n";
     std::cout << "Solver runs: " << solver_runs << "\n";
+    std::cout << "MATCH: " << matches << "  MISMATCH: " << mismatches
+              << "  INCONCLUSIVE: " << inconclusive << "\n";
     std::cout << "CSV saved to results.csv\n";
 
-    return 0;
+    return mismatches > 0 ? 1 : 0;
 }
